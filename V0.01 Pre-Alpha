@@ -1,0 +1,171 @@
+import os
+import sqlite3
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from PIL import Image, ImageTk
+import re
+
+try:
+    import cv2
+    import pytesseract
+    OCR_AVAILABLE = True
+except ImportError:
+    OCR_AVAILABLE = False
+
+# Путь к базе данных
+db_path = "test_tools.db"
+
+# === Подготовка базы с поддержкой разных типов инструментов ===
+conn = sqlite3.connect(db_path)
+cursor = conn.cursor()
+
+# Общая таблица для всех инструментов, параметры храним в JSON-подобном поле
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS tools (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tool_code TEXT,
+    tool_type TEXT,
+    params TEXT,
+    image_path TEXT
+);
+''')
+conn.commit()
+
+cursor.execute('SELECT COUNT(*) FROM tools')
+if cursor.fetchone()[0] == 0:
+    test_rows = [
+        ("DGC-3143D2.5", "drill", "D=2.5;L=57;l1=30", None),
+        ("WTE-4F1035", "endmill", "D=10;L=100;l1=50;l2=20;d=8", None),
+        ("WUD-C25-3D19-SP05-63", "drill_body", "DC=25;L=133;L_work=75;l1=40", None)
+    ]
+    cursor.executemany('INSERT INTO tools (tool_code, tool_type, params, image_path) VALUES (?,?,?,?)', test_rows)
+    conn.commit()
+
+conn.close()
+
+# === OCR-функция ===
+def read_drawing(image_path, tool_type="drill"):
+    if not OCR_AVAILABLE:
+        return []
+    img = cv2.imread(image_path)
+    if img is None:
+        return []
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    custom_config = r'--oem 3 --psm 6'
+    text = pytesseract.image_to_string(thresh, config=custom_config)
+
+    rows = []
+    for line in text.splitlines():
+        # универсальный парсер параметров через split
+        parts = line.split()
+        if len(parts) > 1:
+            code = parts[0]
+            params = ";".join([f"p{i}={val}" for i, val in enumerate(parts[1:], start=1)])
+            rows.append((code, tool_type, params, None))
+    return rows
+
+# === Вставка в БД ===
+def insert_data(rows):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.executemany('''
+        INSERT OR REPLACE INTO tools (tool_code, tool_type, params, image_path)
+        VALUES (?, ?, ?, ?)
+    ''', rows)
+    conn.commit()
+    conn.close()
+
+# === Привязка картинки ===
+def add_image(tool_code, image_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('UPDATE tools SET image_path=? WHERE tool_code=?', (image_path, tool_code))
+    conn.commit()
+    conn.close()
+
+# === Поиск ===
+def search_tools(query):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM tools WHERE tool_code LIKE ?', (f"%{query}%",))
+    rows = cursor.fetchall()
+    conn.close()
+    return rows
+
+# === GUI ===
+class ToolApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Tool Card Generator")
+        self.root.geometry("950x600")
+
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(fill="both", expand=True)
+
+        self.frame1 = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame1, text="📥 Импорт чертежа")
+
+        self.btn_load = ttk.Button(self.frame1, text="Загрузить изображение и распознать", command=self.load_image)
+        self.btn_load.pack(pady=10)
+
+        self.label_result = tk.Label(self.frame1, text="Результаты OCR появятся здесь")
+        self.label_result.pack()
+
+        self.frame2 = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame2, text="🔍 Поиск инструмента")
+
+        self.entry_search = ttk.Entry(self.frame2, width=40)
+        self.entry_search.pack(pady=10)
+        self.btn_search = ttk.Button(self.frame2, text="Найти", command=self.search_tool)
+        self.btn_search.pack()
+
+        self.tree = ttk.Treeview(self.frame2, columns=("id","tool_code","type","params","image"), show="headings")
+        for col in self.tree["columns"]:
+            self.tree.heading(col, text=col)
+        self.tree.pack(fill="both", expand=True)
+
+        self.frame3 = ttk.Frame(self.notebook)
+        self.notebook.add(self.frame3, text="🖼 Добавить картинку")
+
+        self.entry_code = ttk.Entry(self.frame3, width=40)
+        self.entry_code.pack(pady=10)
+        self.btn_add_img = ttk.Button(self.frame3, text="Выбрать картинку", command=self.add_image_to_tool)
+        self.btn_add_img.pack()
+
+    def load_image(self):
+        path = filedialog.askopenfilename(filetypes=[("Images","*.png *.jpg *.jpeg")])
+        if not path:
+            return
+        if not OCR_AVAILABLE:
+            self.label_result.config(text="OCR не доступен в данной среде")
+            return
+        rows = read_drawing(path, "drill")
+        if rows:
+            insert_data(rows)
+            self.label_result.config(text=f"Успешно импортировано {len(rows)} строк")
+        else:
+            self.label_result.config(text="Не удалось распознать таблицу")
+
+    def search_tool(self):
+        query = self.entry_search.get()
+        rows = search_tools(query)
+        for row in self.tree.get_children():
+            self.tree.delete(row)
+        for row in rows:
+            self.tree.insert("", tk.END, values=row)
+
+    def add_image_to_tool(self):
+        code = self.entry_code.get()
+        path = filedialog.askopenfilename(filetypes=[("Images","*.png *.jpg *.jpeg")])
+        if not code or not path:
+            messagebox.showerror("Ошибка","Введите код и выберите изображение")
+            return
+        add_image(code, path)
+        messagebox.showinfo("Успех", f"Изображение добавлено для {code}")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ToolApp(root)
+    root.mainloop()
