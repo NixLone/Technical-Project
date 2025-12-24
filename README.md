@@ -3,7 +3,7 @@
 # ToolCards Project
 
 ### 📌 Project Description
-ToolCards is a desktop application designed to simplify the process of creating and managing tool cards for manufacturing and engineering tasks.  
+ToolCards is a desktop application designed to simplify the process of creating and managing tool cards for manufacturing and engineering tasks.
 The system allows you to:
 - 📊 Store tool data in a local database (SQLite)
 - 🖼️ Attach images and technical drawings
@@ -31,8 +31,60 @@ This project is built with Python and aims to automate repetitive tasks, saving 
 
 ---
 
-### 📥 Installation
-A test build is expected soon. Please follow the project.There is currently no installer program. Please monitor the progress of the work.
+### 📥 Installation (GitHub release)
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/<your-org>/Technical-Project.git
+   cd Technical-Project
+   ```
+2. **Create a virtual environment (recommended):**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+   ```
+3. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *The OCR flow also requires the system Tesseract binary. On Ubuntu: `sudo apt install tesseract-ocr`.*
+4. **Initialize the SQLite database:**
+   ```bash
+   python tool_manager.py init-db --seed
+   ```
+5. **Run commands or start the GUI (desktop only):**
+   ```bash
+   python tool_manager.py --help
+   python tool_manager.py gui
+   ```
+
+---
+
+## 🧰 Running without a desktop (cloud / Telegram bot)
+The `tool_manager.py` module now exposes a CLI and safe database helpers that can be reused from a bot handler or a headless service.
+
+1. **Install dependencies** (OCR is optional):
+   ```bash
+   pip install opencv-python pytesseract pillow
+   ```
+2. **Initialize the database** (with optional demo data):
+   ```bash
+   python tool_manager.py init-db --seed
+   ```
+3. **Import data from a drawing image using OCR**:
+   ```bash
+   python tool_manager.py import-drawing path/to/image.png --tool-type drill
+   ```
+4. **Search existing tools**:
+   ```bash
+   python tool_manager.py search DGC-
+   ```
+5. **Attach an image to an existing tool**:
+   ```bash
+   python tool_manager.py add-image DGC-3143D2.5 path/to/photo.jpg
+   ```
+
+### Integrating with Telegram
+The database (`ToolDatabase`) and OCR (`OCRService`) classes can be imported and called from a Telegram bot handler. Keep `TOOL_DB_PATH` set to a writable location in your hosting environment so multiple bot workers share the same data file.
 
 
 # ToolCards Project (RU)
@@ -61,5 +113,27 @@ ToolCards — это настольное приложение, упрощающ
 - Pandas, Pillow, ReportLab
 
 ### 📥 Установка
-Скоро ожидается тестовая сборка. Следите за развитием проекта. В настоящее время установщика нет. Следите за ходом работ.
-
+1. **Клонируйте репозиторий:**
+   ```bash
+   git clone https://github.com/<your-org>/Technical-Project.git
+   cd Technical-Project
+   ```
+2. **Создайте виртуальное окружение (рекомендуется):**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+   ```
+3. **Установите зависимости:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *Для OCR потребуется системный бинарник Tesseract. В Ubuntu: `sudo apt install tesseract-ocr`.*
+4. **Инициализируйте базу данных SQLite:**
+   ```bash
+   python tool_manager.py init-db --seed
+   ```
+5. **Запускайте команды или GUI (только на рабочем столе):**
+   ```bash
+   python tool_manager.py --help
+   python tool_manager.py gui
+   ```
